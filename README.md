@@ -1,92 +1,93 @@
 # GHL-PS4onPS3
 
-Plugin para PS3 com CFW que permite jogar o **Guitar Hero Live de PS3** com a
-**guitarra e o dongle de PS4** (USB `1430:07bb`).
+A plugin for PS3 consoles running CFW that lets you play **Guitar Hero Live on
+PS3** with the **PS4 guitar and dongle** (USB `1430:07bb`).
 
-Sem o plugin, o jogo para na tela *"Press any button on guitar controller"*:
-ele só reconhece o dongle de PS3 (`12ba:074b`).
+Without it the game stops at *"Press any button on guitar controller"*: it only
+recognizes the PS3 dongle (`12ba:074b`).
 
-## Como funciona
+## How it works
 
-O jogo fala com o dongle direto pela `libusbd`, registrando um driver próprio
-(`GH_Guitar`) para o fabricante `0x12BA`. As funções de probe e attach desse
-driver não conferem o VID/PID, só se o aparelho é HID com um endpoint de entrada
-e um de saída, e o dongle de PS4 também é assim. Carregado dentro do jogo, o
-plugin:
+The game talks to the dongle directly through `libusbd`, registering its own
+driver (`GH_Guitar`) for vendor `0x12BA`. That driver's probe and attach
+callbacks never check the vendor or product id, only that the device is HID with
+one IN and one OUT interrupt endpoint, which the PS4 dongle also is. Loaded into
+the game, the plugin:
 
-1. registra os **próprios callbacks do jogo** também para `1430:07bb`;
-2. troca o comando periódico de ativação ("keep-alive") de PS3 pelo de PS4
-   (`SET_REPORT 0x30`) e o repete a cada 8 s;
-3. converte cada relatório de 64 bytes do PS4 para o layout de 27 bytes do PS3.
+1. registers **the game's own callbacks** for `1430:07bb` as well;
+2. replaces the PS3 keep-alive with the PS4 one (`SET_REPORT 0x30`) and repeats
+   it every 8 s;
+3. converts each 64-byte PS4 report into the 27-byte PS3 layout.
 
-As chamadas `cellUsbdOpenPipe`, `cellUsbdControlTransfer` e
-`cellUsbdInterruptTransfer` são interceptadas trocando o descritor de função
-(OPD), a mesma técnica do ds45pad.
+`cellUsbdOpenPipe`, `cellUsbdControlTransfer` and `cellUsbdInterruptTransfer`
+are intercepted by swapping their function descriptors (OPD), the same technique
+ds45pad uses.
 
-## Compatibilidade
+## Compatibility
 
-- **Jogo:** Guitar Hero Live, `BLUS31556`, com a atualização 1.07. O plugin usa
-  um endereço fixo desse executável e confere a assinatura antes de agir; em
-  outra versão ele só registra `game_ops_not_found_wrong_eboot` no log e não
-  faz nada.
-- **Console:** CFW com Cobra e webMAN MOD (PS3MAPI). Testado no Evilnat 4.91.2.
+- **Game:** Guitar Hero Live, `BLUS31556`, with update 1.07. The plugin uses a
+  fixed address in that executable and checks its signature first; on any other
+  version it only writes `game_ops_not_found_wrong_eboot` to the log and does
+  nothing.
+- **Console:** CFW with Cobra and webMAN MOD (PS3MAPI). Tested on Evilnat 4.91.2.
 
-## Mapeamento
+## Mapping
 
-| Guitarra | Dongle PS4 | Dongle PS3 |
+| Guitar | PS4 dongle | PS3 dongle |
 |---|---|---|
-| Brancos 1, 2, 3 | □, L1, R1 | □, L1, R1 |
-| Pretos 1, 2, 3 | ×, ○, △ | ×, ○, △ |
-| Palheta | analógico esq. Y | analógico esq. Y |
-| Whammy | analógico dir. Y | analógico dir. Y |
-| Tilt | analógico dir. X | acelerômetro X |
+| White 1, 2, 3 | □, L1, R1 | □, L1, R1 |
+| Black 1, 2, 3 | ×, ○, △ | ×, ○, △ |
+| Strum bar | left stick Y | left stick Y |
+| Whammy | right stick Y | right stick Y |
+| Tilt | right stick X | accelerometer X |
 | Hero Power | R3 | Select |
 | Pause | Options | Start |
 | GHTV | L3 | L3 |
-| Botão central | PS | PS |
+| Center button | PS | PS |
 
-Testado no console: trastes, palheta, tilt, Hero Power, Pause, GHTV e o botão PS
-(que abre a XMB). O whammy segue o layout documentado, mas não pôde ser testado:
-na guitarra usada nos testes, a alavanca não envia sinal nem no PC.
+Tested on hardware: frets, strum bar, tilt, Hero Power, Pause, GHTV and the PS
+button (opens the XMB). The whammy follows the documented layout but could not
+be tested: on the guitar used for testing the bar sends no signal, not even on a
+PC.
 
-## Instalação
+## Installation
 
-1. Copie `ghl_ps4onps3.sprx` para `/dev_hdd0/plugins/ghl/`.
-2. Carregue o plugin **com o jogo aberto**, de um destes jeitos:
-   - **Manual:** no navegador, `http://IP-DO-PS3/gameplugin.ps3mapi` → processo
-     do jogo → caminho `/dev_hdd0/plugins/ghl/ghl_ps4onps3.sprx` → **Load**.
-   - **Automático:** com o [ds45pad](https://github.com/domyno6773/DualSense-PS3)
-     2.0.7 ou mais novo, crie `/dev_hdd0/plugins/ds45pad/game_plugins.txt`:
+1. Copy `ghl_ps4onps3.sprx` to `/dev_hdd0/plugins/ghl/`.
+2. Load the plugin **while the game is running**, either:
+   - **Manually:** in a browser, `http://PS3-IP/gameplugin.ps3mapi` → the game's
+     process → path `/dev_hdd0/plugins/ghl/ghl_ps4onps3.sprx` → **Load**.
+   - **Automatically:** with [ds45pad](https://github.com/domyno6773/DualSense-PS3)
+     2.0.7 or newer, create `/dev_hdd0/plugins/ds45pad/game_plugins.txt`:
      ```
-     BLUS31556 /dev_hdd0/plugins/ghl/ghl_ps4onps3.sprx DS45Pad Chitarra GHL PS4 pronta / GHL PS4 guitar ready
+     BLUS31556 /dev_hdd0/plugins/ghl/ghl_ps4onps3.sprx GHL PS4 guitar ready
      ```
-     O plugin é carregado sozinho cerca de 15 s depois que o jogo abre, e a
-     mensagem no fim da linha (opcional) aparece como notificação na tela.
-3. O dongle já conectado é reconhecido assim que o plugin carrega.
+     The plugin is loaded about 15 s after the game starts, and the (optional)
+     message at the end of the line is shown as a notification.
+3. A dongle that is already plugged in is picked up as soon as the plugin loads.
 
-O log fica em `/dev_hdd0/tmp/ghl_ps4onps3.txt`.
+The log is written to `/dev_hdd0/tmp/ghl_ps4onps3.txt`.
 
-## Compilação
+## Building
 
-Usa o Cell SDK (4.75) sob Wine e o `scetool`, como o ds45pad:
+Uses the Cell SDK (4.75) under Wine plus `scetool`, like ds45pad:
 
 ```
-src/build_wine.sh          # versão normal
-src/build_wine.sh debug    # registra no log os bytes desconhecidos do relatório
+src/build_wine.sh          # normal build
+src/build_wine.sh debug    # also logs unknown report bytes
 ```
 
-O build normal não escreve nada no HDD durante o jogo, só ao carregar e ao
-conectar o dongle.
+The normal build writes nothing to the HDD during gameplay, only when it loads
+and when the dongle connects.
 
-## Créditos e referências
+## Credits and references
 
-- [PlasticBand](https://github.com/TheNathannator/PlasticBand): documentação
-  dos relatórios dos dongles de PS3 e PS4.
-- [RPCS3](https://github.com/RPCS3/rpcs3): emulação do dongle de PS3 (`GHLtar.cpp`).
-- Driver `hid-sony` do Linux: comandos de ativação dos dongles.
-- [ds45pad / DualSense-PS3](https://github.com/domyno6773/DualSense-PS3):
-  `libc.c` mínima e a técnica de interceptação.
+- [PlasticBand](https://github.com/TheNathannator/PlasticBand): documentation of
+  the PS3 and PS4 dongle reports.
+- [RPCS3](https://github.com/RPCS3/rpcs3): emulation of the PS3 dongle (`GHLtar.cpp`).
+- Linux `hid-sony` driver: the dongles' keep-alive packets.
+- [ds45pad / DualSense-PS3](https://github.com/domyno6773/DualSense-PS3): the
+  minimal `libc.c` and the hooking technique.
 
-## Licença
+## License
 
-GPL-2.0, a mesma do ds45pad, de onde vem a `libc.c`.
+GPL-2.0, the same as ds45pad, where `libc.c` comes from.
