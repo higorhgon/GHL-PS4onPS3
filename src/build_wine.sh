@@ -15,10 +15,12 @@ LIBDIR="$SDK/target/ppu/lib"
 winpath() { echo "Z:$(realpath -m "$1")" | tr '/' '\\'; }
 
 SRCS="libc main"
+EXTRA=""
+[ "$1" = debug ] && EXTRA="-DGHL_DEBUG"   # logs unknown report bytes (adds file I/O)
 LDLIBS="-lusbd_stub -lfs_stub -llv2_stub"
 AUTH=1010000001000003   # game process
 CFLAGS="-mprx -Os -ffunction-sections -fdata-sections -fno-builtin-printf \
-        -nodefaultlibs -std=gnu99 -Wall -Wno-unused-parameter -I $(winpath "$INCLUDE")"
+        -nodefaultlibs -std=gnu99 -Wall -Wno-unused-parameter -I $(winpath "$INCLUDE") $EXTRA"
 LDFLAGS="-mprx -zgenprx -zgenstub -ffunction-sections -fdata-sections"
 SCEFLAGS="-0 SELF -1 TRUE -s FALSE -2 0A -3 $AUTH -4 01000002 \
           -5 APP -6 0003004000000000 -A 0001000000000000"

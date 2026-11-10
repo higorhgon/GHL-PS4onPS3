@@ -163,6 +163,7 @@ static uint8_t last_ps3[27];
  * queued by the USB callback and written to the log by the plugin thread -
  * file I/O in the callback would stall the input path. */
 #define UNK_RING 64
+#ifdef GHL_DEBUG
 static uint8_t raw_prev[64];
 static volatile uint32_t unk_head, unk_tail;
 static uint16_t unk_ring[UNK_RING];
@@ -197,6 +198,7 @@ static void scan_unknown(const uint8_t *r, int n)
 		raw_prev[i] = r[i];
 	}
 }
+#endif
 
 static const uint8_t ps4_poke[9] = {
 	0x30, 0x02, 0x08, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x00
@@ -300,11 +302,13 @@ static void intr_done(int32_t result, int32_t count, void *arg)
 	void *cb_arg = s->arg;
 
 	if (result == 0 && count >= 20 && buf[0] == 0x01) {
+#ifdef GHL_DEBUG
 		if (log_reports > 0) {
 			log_reports--;
 			log_hex("report_len", (uint32_t)count);
 		}
 		scan_unknown(buf, count);
+#endif
 		ps4_to_ps3(buf, last_ps3);
 	}
 	if (result == 0) {
@@ -402,7 +406,7 @@ static void ghl_thread(uint64_t arg)
 	int r;
 
 	(void)arg;
-	log_msg("start 0.3b");
+	log_msg("start 1.0");
 
 	game_ops = (CellUsbdLddOps *)(uintptr_t)GAME_OPS_ADDR;
 	if (!game_ops->name || strcmp(game_ops->name, "GH_Guitar") != 0) {
@@ -434,6 +438,7 @@ static void ghl_thread(uint64_t arg)
 	while (running) {
 		sys_timer_usleep(250 * 1000);
 		since_poke += 250;
+#ifdef GHL_DEBUG
 		while (unk_tail != unk_head) {
 			uint16_t e = unk_ring[unk_tail % UNK_RING];
 
@@ -443,6 +448,7 @@ static void ghl_thread(uint64_t arg)
 				log_hex("raw_byte_idx_val", e);
 			}
 		}
+#endif
 		if (since_poke >= POKE_PERIOD_MS && ps4_ctrl_pipe >= 0) {
 			since_poke = 0;
 			memcpy(poke_buf, ps4_poke, sizeof(ps4_poke));
