@@ -159,6 +159,45 @@ static slot_t slots[MAX_SLOTS];
 
 static uint8_t last_ps3[27];
 
+/* Diagnostics: bytes that change outside the known ones (whammy, Pause...),
+ * queued by the USB callback and written to the log by the plugin thread -
+ * file I/O in the callback would stall the input path. */
+#define UNK_RING 64
+static uint8_t raw_prev[64];
+static volatile uint32_t unk_head, unk_tail;
+static uint16_t unk_ring[UNK_RING];
+static int unk_logged;
+
+static void scan_unknown(const uint8_t *r, int n)
+{
+	int i;
+
+	if (n > 64)
+		n = 64;
+	for (i = 1; i < n; i++) {
+		uint8_t mask = 0xFF, a, b;
+
+		switch (i) {
+		case 2: case 3: case 5: case 19: case 21: case 22: case 24:
+			mask = 0;
+			break;
+		case 6:
+			mask = (uint8_t)~(0x01 | 0x02 | 0x40 | 0x80);
+			break;
+		case 7:
+			mask = 0x02;            /* skip PS bit and the counter */
+			break;
+		}
+		a = r[i] & mask;
+		b = raw_prev[i] & mask;
+		if (a != b && unk_head - unk_tail < UNK_RING) {
+			unk_ring[unk_head % UNK_RING] = (uint16_t)((i << 8) | r[i]);
+			unk_head++;
+		}
+		raw_prev[i] = r[i];
+	}
+}
+
 static const uint8_t ps4_poke[9] = {
 	0x30, 0x02, 0x08, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x00
 };
@@ -180,7 +219,8 @@ static int is_ps4_dongle(int32_t dev_id)
 /*                                                                           */
 /* PS4 (with report id 1 at [0]): [2] strum 00 up/FF down, [3]=[19] tilt,     */
 /* [5] low nibble hat, [5] 0x10 W1 0x20 B1 0x40 B2 0x80 B3, [6] 0x01 W2       */
-/* 0x02 W3 0x40 Start 0x80 Hero Power, [7] 0x01 GHTV. Measured on hardware.   */
+/* 0x02 W3 0x40 GHTV 0x80 Hero Power, [7] 0x01 PS (assumed, DS4 position).   */
+/* Pause assumed at [6] 0x20 (DS4 Options). Whammy not located yet.           */
 /* PS3: layout from RPCS3's GHLtar emulation.                                 */
 /* ------------------------------------------------------------------------ */
 
@@ -192,8 +232,8 @@ static void ps4_to_ps3(const uint8_t *r, uint8_t *o)
 	o[0] = (b5 & 0x10 ? 0x01 : 0) | (b5 & 0x20 ? 0x02 : 0) |
 	       (b5 & 0x40 ? 0x04 : 0) | (b5 & 0x80 ? 0x08 : 0) |
 	       (b6 & 0x01 ? 0x10 : 0) | (b6 & 0x02 ? 0x20 : 0);
-	o[1] = (b6 & 0x80 ? 0x01 : 0) | (b6 & 0x40 ? 0x02 : 0) |
-	       (b7 & 0x01 ? 0x04 : 0);
+	o[1] = (b6 & 0x80 ? 0x01 : 0) | (b6 & 0x20 ? 0x02 : 0) |
+	       (b6 & 0x40 ? 0x04 : 0) | (b7 & 0x01 ? 0x10 : 0);
 	o[2] = b5 & 0x0F;
 	o[3] = 0x80;
 	o[4] = r[2];
@@ -264,6 +304,7 @@ static void intr_done(int32_t result, int32_t count, void *arg)
 			log_reports--;
 			log_hex("report_len", (uint32_t)count);
 		}
+		scan_unknown(buf, count);
 		ps4_to_ps3(buf, last_ps3);
 	}
 	if (result == 0) {
@@ -361,7 +402,7 @@ static void ghl_thread(uint64_t arg)
 	int r;
 
 	(void)arg;
-	log_msg("start 0.1");
+	log_msg("start 0.3b");
 
 	game_ops = (CellUsbdLddOps *)(uintptr_t)GAME_OPS_ADDR;
 	if (!game_ops->name || strcmp(game_ops->name, "GH_Guitar") != 0) {
@@ -393,6 +434,15 @@ static void ghl_thread(uint64_t arg)
 	while (running) {
 		sys_timer_usleep(250 * 1000);
 		since_poke += 250;
+		while (unk_tail != unk_head) {
+			uint16_t e = unk_ring[unk_tail % UNK_RING];
+
+			unk_tail++;
+			if (unk_logged < 300) {
+				unk_logged++;
+				log_hex("raw_byte_idx_val", e);
+			}
+		}
 		if (since_poke >= POKE_PERIOD_MS && ps4_ctrl_pipe >= 0) {
 			since_poke = 0;
 			memcpy(poke_buf, ps4_poke, sizeof(ps4_poke));
@@ -405,8 +455,15 @@ static void ghl_thread(uint64_t arg)
 		}
 	}
 
-	if (ldd_registered)
-		cellUsbdUnregisterExtraLdd(&our_ops);
+	/* Unregistering runs the game's detach, which closes the pipes, so any
+	 * transfer still pending completes through intr_done while this module
+	 * is still loaded. Only then remove the hooks. */
+	log_msg("stopping");
+	if (ldd_registered) {
+		r = cellUsbdUnregisterExtraLdd(&our_ops);
+		log_hex("unregister_ldd", (uint32_t)r);
+	}
+	sys_timer_usleep(200 * 1000);
 	undetour(&d_intr);
 	undetour(&d_ctrl);
 	undetour(&d_open);
