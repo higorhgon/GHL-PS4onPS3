@@ -219,8 +219,8 @@ static int is_ps4_dongle(int32_t dev_id)
 /*                                                                           */
 /* PS4 (with report id 1 at [0]): [2] strum 00 up/FF down, [3]=[19] tilt,     */
 /* [5] low nibble hat, [5] 0x10 W1 0x20 B1 0x40 B2 0x80 B3, [6] 0x01 W2       */
-/* 0x02 W3 0x40 GHTV 0x80 Hero Power, [7] 0x01 PS (assumed, DS4 position).   */
-/* Pause assumed at [6] 0x20 (DS4 Options). Whammy not located yet.           */
+/* 0x02 W3 0x40 GHTV 0x80 Hero Power, [7] 0x01 PS button.                     */
+/* [6] 0x20 Pause; [4] whammy. Layouts match TheNathannator/PlasticBand.    */
 /* PS3: layout from RPCS3's GHLtar emulation.                                 */
 /* ------------------------------------------------------------------------ */
 
@@ -238,7 +238,7 @@ static void ps4_to_ps3(const uint8_t *r, uint8_t *o)
 	o[3] = 0x80;
 	o[4] = r[2];
 	o[5] = 0x80;
-	o[6] = r[4];            /* whammy: not located yet, idles at 0x80 */
+	o[6] = r[4];            /* whammy, 0x80..0xFF on both (PlasticBand docs) */
 	o[19] = r[19];
 	o[22] = 0x01;
 	o[24] = 0x02;
