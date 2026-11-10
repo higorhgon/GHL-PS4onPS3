@@ -12,7 +12,11 @@
  *  2. on that device, rewrite the game's SET_REPORT "poke" into the PS4 one
  *     and repeat it every 8 s, since the PS4 dongle times out sooner;
  *  3. convert each 64-byte PS4 input report into the 27-byte PS3 layout the
- *     game parses before handing it back.
+ *     game parses before handing it back;
+ *  4. fix what the game forwards to the XMB: it feeds its virtual pad with its
+ *     own menu auto-repeat pulses for up/down/left/right, and the XMB repeats
+ *     on top of that, so one press skipped several items. The direction bits
+ *     are replaced with the guitar's real d-pad and strum state.
  *
  * Loaded into the running game with PS3MAPI (webMAN MOD); replug the dongle
  * afterwards so it attaches to the new LDD.
@@ -27,6 +31,7 @@
 #include <sys/syscall.h>
 #include <cell/cell_fs.h>
 #include <cell/usbd.h>
+#include <cell/pad.h>
 
 SYS_MODULE_INFO(GHL_PS4onPS3, 0, 1, 0);
 SYS_MODULE_START(ghl_start);
@@ -124,7 +129,7 @@ static void undetour(detour_t *d)
 	d->opd = NULL;
 }
 
-static detour_t d_open, d_ctrl, d_intr;
+static detour_t d_open, d_ctrl, d_intr, d_ldd;
 
 typedef int32_t (*open_t)(int32_t, UsbEndpointDescriptor *);
 typedef int32_t (*ctrl_t)(int32_t, UsbDeviceRequest *, void *,
@@ -135,6 +140,9 @@ typedef int32_t (*intr_t)(int32_t, void *, int32_t, CellUsbdDoneCallback,
 #define ORIG_OPEN ((open_t)(uintptr_t)d_open.saved)
 #define ORIG_CTRL ((ctrl_t)(uintptr_t)d_ctrl.saved)
 #define ORIG_INTR ((intr_t)(uintptr_t)d_intr.saved)
+
+typedef int32_t (*ldd_insert_t)(int32_t, CellPadData *);
+#define ORIG_LDD ((ldd_insert_t)(uintptr_t)d_ldd.saved)
 
 /* ------------------------------------------------------------------------ */
 /* State                                                                     */
@@ -355,6 +363,29 @@ static int32_t intr_hook(int32_t pipe, void *buf, int32_t len,
 	return i;
 }
 
+/* The game's virtual pad (what the XMB sees). digital1 is button[2]; the game
+ * leaves len at 0, so it is not checked. */
+static int32_t ldd_insert_hook(int32_t handle, CellPadData *data)
+{
+	if (ps4_dev >= 0 && data) {
+		uint8_t hat = last_ps3[2], strum = last_ps3[4];
+		uint16_t d = data->button[CELL_PAD_BTN_OFFSET_DIGITAL1];
+
+		d &= (uint16_t)~(CELL_PAD_CTRL_UP | CELL_PAD_CTRL_DOWN |
+		                 CELL_PAD_CTRL_LEFT | CELL_PAD_CTRL_RIGHT);
+		if (hat == 7 || hat == 0 || hat == 1 || strum == 0x00)
+			d |= CELL_PAD_CTRL_UP;
+		if (hat == 1 || hat == 2 || hat == 3)
+			d |= CELL_PAD_CTRL_RIGHT;
+		if (hat == 3 || hat == 4 || hat == 5 || strum == 0xFF)
+			d |= CELL_PAD_CTRL_DOWN;
+		if (hat == 5 || hat == 6 || hat == 7)
+			d |= CELL_PAD_CTRL_LEFT;
+		data->button[CELL_PAD_BTN_OFFSET_DIGITAL1] = d;
+	}
+	return ORIG_LDD(handle, data);
+}
+
 /* ------------------------------------------------------------------------ */
 /* LDD: the game's own callbacks, registered for the PS4 dongle              */
 /* ------------------------------------------------------------------------ */
@@ -408,7 +439,7 @@ static void ghl_thread(uint64_t arg)
 	int r;
 
 	(void)arg;
-	log_msg("start 1.0.1");
+	log_msg("start 1.1");
 
 	game_ops = (CellUsbdLddOps *)(uintptr_t)GAME_OPS_ADDR;
 	if (!game_ops->name || strcmp(game_ops->name, "GH_Guitar") != 0) {
@@ -427,6 +458,7 @@ static void ghl_thread(uint64_t arg)
 	detour((void *)cellUsbdOpenPipe, (void *)open_hook, &d_open);
 	detour((void *)cellUsbdControlTransfer, (void *)ctrl_hook, &d_ctrl);
 	detour((void *)cellUsbdInterruptTransfer, (void *)intr_hook, &d_intr);
+	detour((void *)cellPadLddDataInsert, (void *)ldd_insert_hook, &d_ldd);
 	log_msg("hooks_installed");
 
 	our_ops.name = "GHL_PS4";
@@ -472,6 +504,7 @@ static void ghl_thread(uint64_t arg)
 		log_hex("unregister_ldd", (uint32_t)r);
 	}
 	sys_timer_usleep(200 * 1000);
+	undetour(&d_ldd);
 	undetour(&d_intr);
 	undetour(&d_ctrl);
 	undetour(&d_open);
