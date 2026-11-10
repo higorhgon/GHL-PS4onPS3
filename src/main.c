@@ -14,9 +14,9 @@
  *  3. convert each 64-byte PS4 input report into the 27-byte PS3 layout the
  *     game parses before handing it back;
  *  4. fix what the game forwards to the XMB: it feeds its virtual pad with its
- *     own menu auto-repeat pulses for up/down, and the XMB repeats on top of
- *     that, so one press skipped several items. Those two bits are replaced
- *     with the guitar's real d-pad and strum state.
+ *     own menu auto-repeat pulses for up/down/left/right, and the XMB repeats
+ *     on top of that, so one press skipped several items. The direction bits
+ *     are replaced with the guitar's real d-pad and strum state.
  *
  * Loaded into the running game with PS3MAPI (webMAN MOD); replug the dongle
  * afterwards so it attaches to the new LDD.
@@ -371,14 +371,16 @@ static int32_t ldd_insert_hook(int32_t handle, CellPadData *data)
 		uint8_t hat = last_ps3[2], strum = last_ps3[4];
 		uint16_t d = data->button[CELL_PAD_BTN_OFFSET_DIGITAL1];
 
-		/* Only up/down carry the repeat pulses; the game sends left/right
-		 * as plain held state from other inputs, which its own menus read
-		 * back, so those are left alone. */
-		d &= (uint16_t)~(CELL_PAD_CTRL_UP | CELL_PAD_CTRL_DOWN);
+		d &= (uint16_t)~(CELL_PAD_CTRL_UP | CELL_PAD_CTRL_DOWN |
+		                 CELL_PAD_CTRL_LEFT | CELL_PAD_CTRL_RIGHT);
 		if (hat == 7 || hat == 0 || hat == 1 || strum == 0x00)
 			d |= CELL_PAD_CTRL_UP;
+		if (hat == 1 || hat == 2 || hat == 3)
+			d |= CELL_PAD_CTRL_RIGHT;
 		if (hat == 3 || hat == 4 || hat == 5 || strum == 0xFF)
 			d |= CELL_PAD_CTRL_DOWN;
+		if (hat == 5 || hat == 6 || hat == 7)
+			d |= CELL_PAD_CTRL_LEFT;
 		data->button[CELL_PAD_BTN_OFFSET_DIGITAL1] = d;
 	}
 	return ORIG_LDD(handle, data);
@@ -437,7 +439,7 @@ static void ghl_thread(uint64_t arg)
 	int r;
 
 	(void)arg;
-	log_msg("start 1.1.1");
+	log_msg("start 1.1");
 
 	game_ops = (CellUsbdLddOps *)(uintptr_t)GAME_OPS_ADDR;
 	if (!game_ops->name || strcmp(game_ops->name, "GH_Guitar") != 0) {
