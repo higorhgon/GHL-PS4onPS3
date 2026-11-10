@@ -58,7 +58,7 @@ na guitarra usada nos testes, a alavanca não envia sinal nem no PC.
    - **Automático:** com o [ds45pad](https://github.com/domyno6773/DualSense-PS3)
      2.0.7 ou mais novo, crie `/dev_hdd0/plugins/ds45pad/game_plugins.txt`:
      ```
-     BLUS31556 /dev_hdd0/plugins/ghl/ghl_ps4onps3.sprx Guitarra GH Live PS4 pronta!
+     BLUS31556 /dev_hdd0/plugins/ghl/ghl_ps4onps3.sprx DS45Pad Chitarra GHL PS4 pronta / GHL PS4 guitar ready
      ```
      O plugin é carregado sozinho cerca de 15 s depois que o jogo abre, e a
      mensagem no fim da linha (opcional) aparece como notificação na tela.
