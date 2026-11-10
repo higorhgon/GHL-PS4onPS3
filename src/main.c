@@ -236,7 +236,9 @@ static void ps4_to_ps3(const uint8_t *r, uint8_t *o)
 	       (b6 & 0x01 ? 0x10 : 0) | (b6 & 0x02 ? 0x20 : 0);
 	o[1] = (b6 & 0x80 ? 0x01 : 0) | (b6 & 0x20 ? 0x02 : 0) |
 	       (b6 & 0x40 ? 0x04 : 0) | (b7 & 0x01 ? 0x10 : 0);
-	o[2] = b5 & 0x0F;
+	/* Hat: PS4 is neutral at 8, the PS3 dongle at 15 (0x0F). Passing 8 through
+	 * reads as a held direction and keeps the XMB scrolling. */
+	o[2] = (b5 & 0x0F) >= 8 ? 0x0F : (b5 & 0x0F);
 	o[3] = 0x80;
 	o[4] = r[2];
 	o[5] = 0x80;
@@ -406,7 +408,7 @@ static void ghl_thread(uint64_t arg)
 	int r;
 
 	(void)arg;
-	log_msg("start 1.0");
+	log_msg("start 1.0.1");
 
 	game_ops = (CellUsbdLddOps *)(uintptr_t)GAME_OPS_ADDR;
 	if (!game_ops->name || strcmp(game_ops->name, "GH_Guitar") != 0) {
