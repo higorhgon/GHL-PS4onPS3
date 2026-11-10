@@ -52,12 +52,13 @@ PC.
 
 ## Installation
 
-1. Copy `ghl_ps4onps3.sprx` to `/dev_hdd0/plugins/ghl/`.
+1. Download `ghl_ps4onps3.sprx` from [Releases](https://github.com/higorhgon/GHL-PS4onPS3/releases)
+   and copy it to `/dev_hdd0/plugins/ghl/`.
 2. Load the plugin **while the game is running**, either:
    - **Manually:** in a browser, `http://PS3-IP/gameplugin.ps3mapi` → the game's
      process → path `/dev_hdd0/plugins/ghl/ghl_ps4onps3.sprx` → **Load**.
-   - **Automatically:** with [ds45pad](https://github.com/domyno6773/DualSense-PS3)
-     2.0.7 or newer, create `/dev_hdd0/plugins/ds45pad/game_plugins.txt`:
+   - **Automatically:** with [ds45pad 2.0.7](https://github.com/higorhgon/DualSense-PS3)
+     or newer (this fork), create `/dev_hdd0/plugins/ds45pad/game_plugins.txt`:
      ```
      BLUS31556 /dev_hdd0/plugins/ghl/ghl_ps4onps3.sprx GHL PS4 guitar ready
      ```
@@ -85,8 +86,8 @@ and when the dongle connects.
   the PS3 and PS4 dongle reports.
 - [RPCS3](https://github.com/RPCS3/rpcs3): emulation of the PS3 dongle (`GHLtar.cpp`).
 - Linux `hid-sony` driver: the dongles' keep-alive packets.
-- [ds45pad / DualSense-PS3](https://github.com/domyno6773/DualSense-PS3): the
-  minimal `libc.c` and the hooking technique.
+- [ds45pad / DualSense-PS3](https://github.com/domyno6773/DualSense-PS3) by domyno6773:
+  the minimal `libc.c` and the hooking technique.
 
 ## License
 
