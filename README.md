@@ -68,6 +68,20 @@ PC.
 
 The log is written to `/dev_hdd0/tmp/ghl_ps4onps3.txt`.
 
+## Disabling CFW syscalls from the guitar
+
+Some online mods for the game ask for the CFW syscalls to be disabled, but
+webMAN's menus for that are only reachable outside the game. With the plugin
+loaded, **hold GHTV for 5 seconds**: the plugin sends webMAN MOD the same
+request as opening `http://PS3-IP/xmb.ps3$disable_syscalls`, so webMAN does it
+with its own settings and shows its own notification.
+
+- It fires once per hold; release and hold again to repeat it.
+- The game still sees the GHTV press as usual.
+- The plugin keeps working with the syscalls disabled, since it only needs
+  them to be loaded. Load it first, then disable them.
+- To re-enable them, open `http://PS3-IP/syscall.ps3mapi?sce=1` or reboot.
+
 ## Building
 
 Uses the Cell SDK (4.75) under Wine plus `scetool`, like ds45pad:

@@ -32,6 +32,9 @@
 #include <cell/cell_fs.h>
 #include <cell/usbd.h>
 #include <cell/pad.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <netinet/in.h>
 
 SYS_MODULE_INFO(GHL_PS4onPS3, 0, 1, 0);
 SYS_MODULE_START(ghl_start);
@@ -43,6 +46,9 @@ SYS_MODULE_STOP(ghl_stop);
 #define PS4_PID         0x07BB
 #define POKE_PERIOD_MS  8000
 #define MAX_SLOTS       8
+#define COMBO_HOLD_MS   5000            /* GHTV held this long */
+#define WEBMAN_PORT     80
+#define WEBMAN_REQUEST  "GET /xmb.ps3$disable_syscalls HTTP/1.0\r\n\r\n"
 
 /* ------------------------------------------------------------------------ */
 /* Log                                                                       */
@@ -166,6 +172,7 @@ typedef struct {
 static slot_t slots[MAX_SLOTS];
 
 static uint8_t last_ps3[27];
+static volatile int combo_held;     /* GHTV held, set by the USB callback */
 
 /* Diagnostics: bytes that change outside the known ones (whammy, Pause...),
  * queued by the USB callback and written to the log by the plugin thread -
@@ -237,6 +244,9 @@ static int is_ps4_dongle(int32_t dev_id)
 static void ps4_to_ps3(const uint8_t *r, uint8_t *o)
 {
 	uint8_t b5 = r[5], b6 = r[6], b7 = r[7];
+
+	/* Holding GHTV: the "disable CFW syscalls" combo. */
+	combo_held = (b6 & 0x40) != 0;
 
 	memset(o, 0, 27);
 	o[0] = (b5 & 0x10 ? 0x01 : 0) | (b5 & 0x20 ? 0x02 : 0) |
@@ -429,17 +439,59 @@ static void poke_done(int32_t result, int32_t count, void *arg)
 }
 
 /* ------------------------------------------------------------------------ */
+/* Combo: ask webMAN MOD to disable the CFW syscalls                         */
+/*                                                                           */
+/* Same request as opening http://PS3-IP/xmb.ps3$disable_syscalls, so webMAN */
+/* does it its own way (its settings, notification and syscall 8 mode). The  */
+/* game process already has the network stack (sys_net) up.                  */
+/* ------------------------------------------------------------------------ */
+
+static void request_disable_syscalls(void)
+{
+	static const char req[] = WEBMAN_REQUEST;
+	struct sockaddr_in sin;
+	struct timeval tv;
+	char reply[64];
+	int s, r;
+
+	s = socket(AF_INET, SOCK_STREAM, 0);
+	if (s < 0) {
+		log_hex("combo_socket", (uint32_t)s);
+		return;
+	}
+	tv.tv_sec = 5;
+	tv.tv_usec = 0;
+	setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+	setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_len = sizeof(sin);
+	sin.sin_family = AF_INET;
+	sin.sin_port = htons(WEBMAN_PORT);
+	sin.sin_addr.s_addr = htonl(0x7F000001);    /* 127.0.0.1 */
+
+	r = connect(s, (struct sockaddr *)&sin, sizeof(sin));
+	if (r == 0)
+		r = send(s, req, sizeof(req) - 1, 0);
+	/* Wait for webMAN to answer (it finishes the job before replying). */
+	if (r > 0)
+		r = recv(s, reply, sizeof(reply), 0);
+	log_hex("combo_disable_syscalls", (uint32_t)r);
+	socketclose(s);
+}
+
+/* ------------------------------------------------------------------------ */
 /* Thread and module entry points                                            */
 /* ------------------------------------------------------------------------ */
 
 static void ghl_thread(uint64_t arg)
 {
 	sys_lwmutex_attribute_t attr;
-	uint32_t since_poke = 0;
+	uint32_t since_poke = 0, combo_ms = 0;
 	int r;
 
 	(void)arg;
-	log_msg("start 1.1");
+	log_msg("start 1.2");
 
 	game_ops = (CellUsbdLddOps *)(uintptr_t)GAME_OPS_ADDR;
 	if (!game_ops->name || strcmp(game_ops->name, "GH_Guitar") != 0) {
@@ -472,6 +524,12 @@ static void ghl_thread(uint64_t arg)
 	while (running) {
 		sys_timer_usleep(250 * 1000);
 		since_poke += 250;
+
+		/* Fires once per hold; release to arm it again. */
+		if (!combo_held || ps4_dev < 0)
+			combo_ms = 0;
+		else if (combo_ms < COMBO_HOLD_MS && (combo_ms += 250) >= COMBO_HOLD_MS)
+			request_disable_syscalls();
 #ifdef GHL_DEBUG
 		while (unk_tail != unk_head) {
 			uint16_t e = unk_ring[unk_tail % UNK_RING];
